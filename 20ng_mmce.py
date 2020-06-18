@@ -19,7 +19,7 @@ flags.DEFINE_integer('batch_size', 128, 'Batch size for training.')
 flags.DEFINE_integer('num_epochs', 22, 'Number of epochs of training.')
 FLAGS = flags.FLAGS
 
-BASE_DIR = ''
+BASE_DIR = '' #/Users/xuanchen/Desktop/adversarial /MMCE
 GLOVE_DIR = os.path.join(BASE_DIR, 'glove.6B')
 TEXT_DATA_DIR = os.path.join(BASE_DIR, '20_newsgroup')
 MAX_SEQUENCE_LENGTH = 1000
