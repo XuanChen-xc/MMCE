@@ -11,6 +11,7 @@ from keras.layers import Conv1D, MaxPooling1D, Embedding
 from keras.models import Model
 
 import tensorflow as tf
+from keras.datasets import mnist
 
 flags = tf.app.flags
 flags.DEFINE_float('mmce_coeff', 4.0,
@@ -27,95 +28,22 @@ MAX_NUM_WORDS = 20000
 EMBEDDING_DIM = 100
 VALIDATION_SPLIT = 0.2
 
-print('Indexing word vectors.')
+(x_train,y_train),(x_test,y_test) = mnist.load_data()
+x_train = x_train.astype(np.int64)
+x_test = x_test.astype(np.int64)
 
-embeddings_index = {}
-f = open(os.path.join(GLOVE_DIR, 'glove.6B.100d.txt'))
-for line in f:
-    values = line.split()
-    word = values[0]
-    coefs = np.asarray(values[1:], dtype='float32')
-    embeddings_index[word] = coefs
-f.close()
+num_validation_samples = 1000
 
-print('Found %s word vectors.' % len(embeddings_index))
 
-# second, prepare text samples and their labels
-print('Processing text dataset')
+x_pval = x_train[-num_validation_samples:]
+y_pval = y_train[-num_validation_samples:]
 
-texts = []  # list of text samples
-labels_index = {}  # dictionary mapping label name to numeric id
-labels = []  # list of label ids
-for name in sorted(os.listdir(TEXT_DATA_DIR)):
-    path = os.path.join(TEXT_DATA_DIR, name)
-    if os.path.isdir(path):
-        label_id = len(labels_index)
-        labels_index[name] = label_id
-        for fname in sorted(os.listdir(path)):
-            if fname.isdigit():
-                fpath = os.path.join(path, fname)
-                if sys.version_info < (3,):
-                    f = open(fpath)
-                else:
-                    f = open(fpath, encoding='latin-1')
-                t = f.read()
-                i = t.find('\n\n')  # skip header
-                if 0 < i:
-                    t = t[i:]
-                texts.append(t)
-                f.close()
-                labels.append(label_id)
+x_val = x_test
+y_val = y_test
 
-print('Found %s texts.' % len(texts))
-
-# finally, vectorize the text samples into a 2D integer tensor
-tokenizer = Tokenizer(num_words=MAX_NUM_WORDS)
-tokenizer.fit_on_texts(texts)
-sequences = tokenizer.texts_to_sequences(texts)
-
-word_index = tokenizer.word_index
-print('Found %s unique tokens.' % len(word_index))
-
-data = pad_sequences(sequences, maxlen=MAX_SEQUENCE_LENGTH)
-
-labels = to_categorical(np.asarray(labels))
-print('Shape of data tensor:', data.shape)
-print('Shape of label tensor:', labels.shape)
-
-# split the data into a training set and a validation set
-indices = np.arange(data.shape[0])
-np.random.shuffle(indices)
-data = data[indices]
-labels = labels[indices]
-num_validation_samples = int(VALIDATION_SPLIT * data.shape[0])
-
-x_train = data[:-(num_validation_samples+900)]
-y_train = labels[:-(num_validation_samples+900)]
-x_pval = data[data.shape[0]-num_validation_samples-900:(data.shape[0]
-                                                    -num_validation_samples)]
-y_pval = labels[data.shape[0]-(num_validation_samples+900):(data.shape[0]
-                                                    -num_validation_samples)]
-x_val = data[-num_validation_samples:]
-y_val = labels[-num_validation_samples:]
-
-print (data.shape[0] - num_validation_samples)
-print ('XPVAL: ', x_pval.shape, data.shape)
-
-print('Preparing embedding matrix.', x_train.shape)
-
-# prepare embedding matrix
-# num_words = min(MAX_NUM_WORDS, len(word_index))
-# embedding_matrix = np.zeros((num_words, EMBEDDING_DIM))
-# for word, i in word_index.items():
-#     if i >= MAX_NUM_WORDS:
-#         continue
-#     embedding_vector = embeddings_index.get(word)
-#     if embedding_vector is not None:
-#         # words not found in embedding index will be all-zeros.
-#         embedding_matrix[i] = embedding_vector
 
 def get_out_tensor(tensor1, tensor2):
-  return tf.reduce_mean(tensor1*tensor2)
+    return tf.reduce_mean(tensor1*tensor2)
 
 def calibration_unbiased_loss(logits, correct_labels):
     """Function to compute MMCE_m loss."""  
@@ -134,18 +62,18 @@ def calibration_unbiased_loss(logits, correct_labels):
     prob_pairs = tf.concat([prob_tiled, tf.transpose(prob_tiled, [1, 0, 2])],
                             axis=2)
 
-  def tf_kernel(matrix):
-    return tf.exp(-1.0*tf.abs(matrix[:, :, 0] - matrix[:, :, 1])/(2*0.2))  
+    def tf_kernel(matrix):
+      return tf.exp(-1.0*tf.abs(matrix[:, :, 0] - matrix[:, :, 1])/(2*0.2))  
 
-  kernel_prob_pairs = tf_kernel(prob_pairs)
-  numerator = dot_product*kernel_prob_pairs
-  return tf.reduce_sum(numerator)/tf.square(tf.to_float(tf.shape(correct_mask)[0]))
+    kernel_prob_pairs = tf_kernel(prob_pairs)
+    numerator = dot_product*kernel_prob_pairs
+    return tf.reduce_sum(numerator)/tf.square(tf.to_float(tf.shape(correct_mask)[0]))
         
 def self_entropy(logits):
-  probs = tf.nn.softmax(logits)
-  log_logits = tf.log(probs + 1e-10)
-  logits_log_logits = probs*log_logits
-  return -tf.reduce_mean(logits_log_logits)
+    probs = tf.nn.softmax(logits)
+    log_logits = tf.log(probs + 1e-10)
+    logits_log_logits = probs*log_logits
+    return -tf.reduce_mean(logits_log_logits)
 
 def calibration_mmce_w_loss(logits, correct_labels):
     """Function to compute the MMCE_w loss."""
@@ -159,11 +87,11 @@ def calibration_mmce_w_loss(logits, correct_labels):
     correct_mask = tf.where(tf.equal(correct_labels, predicted_labels),
                             tf.ones(tf.shape(correct_labels)),
                             tf.zeros(tf.shape(correct_labels)))
-    sigma = 0.2
+    sigma = 0.4
 
     def tf_kernel(matrix):
         """Kernel was taken to be a laplacian kernel with sigma = 0.4."""
-        return tf.exp(-1.0*tf.abs(matrix[:, :, 0] - matrix[:, :, 1])/(2*0.2))  
+        return tf.exp(-1.0*tf.abs(matrix[:, :, 0] - matrix[:, :, 1])/(sigma))  
 
     k = tf.to_int32(tf.reduce_sum(correct_mask))
     k_p = tf.to_int32(tf.reduce_sum(1.0 - correct_mask))
@@ -222,38 +150,45 @@ def calibration_mmce_w_loss(logits, correct_labels):
     return tf.maximum(tf.stop_gradient(tf.to_float(cond_k*cond_k_p))*\
                                             tf.sqrt(mmd_error + 1e-10), 0.0)
 
-def model(inputs, keep_prob):
+def model(inputs):
     ''' Generate the CNN model '''
-    W = tf.Variable(tf.zeros([num_words, EMBEDDING_DIM]),
-                    trainable=False,
-                    name='embed_weights')
-    embedding_placeholder = tf.placeholder(tf.float32,
-                                          [num_words, EMBEDDING_DIM])
-    embedding_init = W.assign(embedding_placeholder)
 
-    embedding_output = tf.nn.embedding_lookup(W, inputs)
-    conv_1 = tf.layers.conv1d(embedding_output, 128, 5,  1,
-                             'VALID', name='conv_layer1')
-    conv_relu1 = tf.nn.relu(conv_1)
-    pooled_1 = tf.layers.max_pooling1d(conv_relu1, 5, 1)
-    conv_2 = tf.layers.conv1d(pooled_1, 128, 5,  1, 'VALID', name='conv_layer2')
-    conv_relu2 = tf.nn.relu(conv_2)
+   
+    input_layer = tf.reshape(inputs, [-1, 28, 28, 1])
+    padded_input = tf.pad(input_layer, [[0, 0], [2, 2], [2, 2], [0, 0]], "CONSTANT") 
 
-    print ("Conv Relu3: ", conv_relu2)
-    pooled_2 = tf.layers.max_pooling1d(conv_relu2, 5, 1)
-    conv_3 = tf.layers.conv1d(pooled_2, 128, 5, 1, 'VALID', name='conv_layer3')
-    conv_relu3 = tf.nn.relu(conv_3)
+    conv1 = tf.layers.conv2d(
+          inputs=padded_input,
+          filters=6, # Number of filters.
+          kernel_size=5, # Size of each filter is 5x5.
+          padding="valid", # No padding is applied to the input.
+          activation=tf.nn.relu,
+          name='conv_layer1')
 
-    # batch x step x feature_size
-    # now global max pooling layer
-    global_pool_out = tf.reduce_max(conv_relu3, axis=1)
-    print ('Global pool out: ', global_pool_out)
-    fc1 = tf.contrib.layers.fully_connected(global_pool_out, 128)
-    fc1 = tf.nn.dropout(fc1, keep_prob)
-    out_layer = tf.contrib.layers.fully_connected(fc1, 20,
-                                                  activation_fn=tf.nn.softmax)
+    pool1 = tf.layers.max_pooling2d(inputs=conv1, pool_size=[2, 2], strides=2)
 
-    return out_layer, embedding_init, embedding_placeholder
+    conv2 = tf.layers.conv2d(
+          inputs=pool1,
+          filters=16, # Number of filters
+          kernel_size=5, # Size of each filter is 5x5
+          padding="valid", # No padding
+          activation=tf.nn.relu)
+    # Reshaping output into a single dimention array for input to fully connected layer
+    pool2 = tf.layers.max_pooling2d(inputs=conv2, pool_size=[2, 2], strides=2)
+
+    pool2_flat = tf.reshape(pool2, [-1, 5 * 5 * 16])
+
+    # Fully connected layer #1: Has 120 neurons
+    dense1 = tf.layers.dense(inputs=pool2_flat, units=120, activation=tf.nn.relu)
+
+    # Fully connected layer #2: Has 84 neurons
+    dense2 = tf.layers.dense(inputs=dense1, units=84, activation=tf.nn.relu)
+
+    # Output layer, 10 neurons for each digit
+    logits = tf.layers.dense(inputs=dense2, units=10, activation=tf.nn.softmax)
+    
+    return logits
+
 
 def add_loss(logits, true_labels):
     mmce_error = 1.0*calibration_mmce_w_loss(tf.log(logits + 1e-10), true_labels)
@@ -267,12 +202,11 @@ def optimize(loss):
     train_opt = opt.minimize(loss)
     return train_opt
 
-input_placeholder = tf.placeholder(tf.int32, [None, None])
-input_labels = tf.placeholder(tf.int64, [None])
-keep_prob = tf.placeholder(tf.float32)
+input_placeholder = tf.placeholder(tf.float32, [None, 28, 28], name="input")
+input_labels = tf.placeholder(tf.int64, [None, ], name="label")
 
-logits_layer, embedding_init,\
-            embedding_placeholder = model(input_placeholder, keep_prob)
+
+logits_layer = model(input_placeholder)
 loss_layer = add_loss(logits_layer, input_labels)
 train_op = optimize(loss_layer)
 
@@ -284,45 +218,47 @@ acc = tf.reduce_sum(tf.where(tf.equal(predictions, input_labels),
 sess = tf.Session()
 sess.run(tf.global_variables_initializer())
 sess.run(tf.local_variables_initializer())
-sess.run(embedding_init, feed_dict={embedding_placeholder: embedding_matrix})
+
 
 batch_size = FLAGS.batch_size
 num_epochs = FLAGS.num_epochs
 
 for epoch in range(num_epochs):
-    perm = np.random.permutation(np.arange(len(x_train)))
-    permutation_train = np.take(x_train, perm, axis=0)
-    permutation_labels = np.take(y_train, perm, axis=0)
 
+    num_samples = x_train.shape[0]
+    num_batches = (num_samples // batch_size) + 1
+    i = 0
+    print('number of batches:', num_batches)
     overall_avg_loss = 0.0
     overall_acc = 0.0
-    for i in range(permutation_train.shape[0]//batch_size):
+    while i < num_samples:
+
+        batch_x = x_train[i:i+batch_size,:]
+        batch_y = y_train[i:i+batch_size]
         feed_dict = dict()
-        feed_dict[input_placeholder] = permutation_train[i*batch_size:\
-                                                             (i+1)*batch_size]
-        feed_dict[input_labels] = np.argmax(permutation_labels[i*batch_size:\
-                                                           (i+1)*batch_size], 1)
-        feed_dict[keep_prob] = 0.7
+        feed_dict[input_placeholder] = batch_x
+        feed_dict[input_labels] = batch_y
+        
         loss, _, acc_train = sess.run([loss_layer, train_op, acc],
                                       feed_dict=feed_dict)
         overall_avg_loss += loss
         overall_acc += acc_train
+
+        i += batch_size
         
-    print ('Train acc: ', overall_acc/permutation_train.shape[0])
+    print ('Train acc: ', overall_acc/x_train.shape[0])
     print ('Train Loss: ', overall_avg_loss)
 
     feed_dict = dict()
     print (x_pval.shape)
     feed_dict[input_placeholder] = x_pval
-    feed_dict[input_labels] = np.argmax(y_pval, 1)
-    feed_dict[keep_prob] = 1.0
+    feed_dict[input_labels] = y_pval
     accuracy, val_loss = sess.run([acc, loss_layer], feed_dict=feed_dict)
     print ('Val accuracy: ', accuracy/x_pval.shape[0], val_loss)
     
     feed_dict = dict()
     feed_dict[input_placeholder] = x_val
-    feed_dict[input_labels] = np.argmax(y_val, 1)
-    feed_dict[keep_prob] = 1.0
+    feed_dict[input_labels] = y_val
     accuracy, loss = sess.run([acc, loss_layer], feed_dict=feed_dict)
     preds_t = sess.run(logits_layer, feed_dict=feed_dict)
     
@@ -335,11 +271,10 @@ for epoch in range(num_epochs):
 # Final testing after training, also print the targets and logits
 # for computing calibration.
 feed_dict = dict()
-feed_dict[input_placeholder] = x_pval
-feed_dict[input_labels] = np.argmax(y_pval, 1)
-feed_dict[keep_prob] = 1.0
+feed_dict[input_placeholder] = x_test
+feed_dict[input_labels] = y_test
 accuracy, logits = sess.run([acc, logits_layer], feed_dict=feed_dict)
-print ('Targets: ', np.argmax(y_pval, 1).tolist())
+print ('Targets: ', y_test.tolist())
 print ('Predictions: ', np.argmax(logits, 1).tolist())
 print ('Probs: ', logits.tolist())
 
