@@ -104,35 +104,35 @@ print ('XPVAL: ', x_pval.shape, data.shape)
 print('Preparing embedding matrix.', x_train.shape)
 
 # prepare embedding matrix
-num_words = min(MAX_NUM_WORDS, len(word_index))
-embedding_matrix = np.zeros((num_words, EMBEDDING_DIM))
-for word, i in word_index.items():
-    if i >= MAX_NUM_WORDS:
-        continue
-    embedding_vector = embeddings_index.get(word)
-    if embedding_vector is not None:
-        # words not found in embedding index will be all-zeros.
-        embedding_matrix[i] = embedding_vector
+# num_words = min(MAX_NUM_WORDS, len(word_index))
+# embedding_matrix = np.zeros((num_words, EMBEDDING_DIM))
+# for word, i in word_index.items():
+#     if i >= MAX_NUM_WORDS:
+#         continue
+#     embedding_vector = embeddings_index.get(word)
+#     if embedding_vector is not None:
+#         # words not found in embedding index will be all-zeros.
+#         embedding_matrix[i] = embedding_vector
 
 def get_out_tensor(tensor1, tensor2):
   return tf.reduce_mean(tensor1*tensor2)
 
 def calibration_unbiased_loss(logits, correct_labels):
-  """Function to compute MMCE_m loss."""  
-  predicted_probs = tf.nn.softmax(logits)
-  pred_labels = tf.argmax(predicted_probs, 1)
-  predicted_probs = tf.reduce_max(predicted_probs, 1)
-  correct_mask = tf.where(tf.equal(pred_labels, correct_labels),
-                          tf.ones(tf.shape(pred_labels)),
-                          tf.zeros(tf.shape(pred_labels)))
-  c_minus_r = tf.to_float(correct_mask) - predicted_probs
-  dot_product = tf.matmul(tf.expand_dims(c_minus_r, 1),
-                          tf.transpose(tf.expand_dims(c_minus_r, 1)))
-  tensor1 = predicted_probs
-  prob_tiled = tf.expand_dims(tf.tile(tf.expand_dims(tensor1, 1),
-                              [1, tf.shape(tensor1)[0]]), 2)
-  prob_pairs = tf.concat([prob_tiled, tf.transpose(prob_tiled, [1, 0, 2])],
-                         axis=2)
+    """Function to compute MMCE_m loss."""  
+    predicted_probs = tf.nn.softmax(logits)
+    pred_labels = tf.argmax(predicted_probs, 1)
+    predicted_probs = tf.reduce_max(predicted_probs, 1)
+    correct_mask = tf.where(tf.equal(pred_labels, correct_labels),
+                            tf.ones(tf.shape(pred_labels)),
+                            tf.zeros(tf.shape(pred_labels)))
+    c_minus_r = tf.to_float(correct_mask) - predicted_probs
+    dot_product = tf.matmul(tf.expand_dims(c_minus_r, 1),
+                            tf.transpose(tf.expand_dims(c_minus_r, 1)))
+    tensor1 = predicted_probs
+    prob_tiled = tf.expand_dims(tf.tile(tf.expand_dims(tensor1, 1),
+                                [1, tf.shape(tensor1)[0]]), 2)
+    prob_pairs = tf.concat([prob_tiled, tf.transpose(prob_tiled, [1, 0, 2])],
+                            axis=2)
 
   def tf_kernel(matrix):
     return tf.exp(-1.0*tf.abs(matrix[:, :, 0] - matrix[:, :, 1])/(2*0.2))  
@@ -148,79 +148,79 @@ def self_entropy(logits):
   return -tf.reduce_mean(logits_log_logits)
 
 def calibration_mmce_w_loss(logits, correct_labels):
-  """Function to compute the MMCE_w loss."""
-  predicted_probs = tf.nn.softmax(logits)
-  range_index = tf.to_int64(tf.expand_dims(tf.range(0,
-                                            tf.shape(predicted_probs)[0]), 1))
-  predicted_labels = tf.argmax(predicted_probs, axis=1)
-  gather_index = tf.concat([range_index,
-                            tf.expand_dims(predicted_labels, 1)], axis=1)
-  predicted_probs = tf.reduce_max(predicted_probs, 1)
-  correct_mask = tf.where(tf.equal(correct_labels, predicted_labels),
-                          tf.ones(tf.shape(correct_labels)),
-                          tf.zeros(tf.shape(correct_labels)))
-  sigma = 0.2
-  
-  def tf_kernel(matrix):
-    """Kernel was taken to be a laplacian kernel with sigma = 0.4."""
-    return tf.exp(-1.0*tf.abs(matrix[:, :, 0] - matrix[:, :, 1])/(2*0.2))  
+    """Function to compute the MMCE_w loss."""
+    predicted_probs = tf.nn.softmax(logits)
+    range_index = tf.to_int64(tf.expand_dims(tf.range(0,
+                                              tf.shape(predicted_probs)[0]), 1))
+    predicted_labels = tf.argmax(predicted_probs, axis=1)
+    gather_index = tf.concat([range_index,
+                              tf.expand_dims(predicted_labels, 1)], axis=1)
+    predicted_probs = tf.reduce_max(predicted_probs, 1)
+    correct_mask = tf.where(tf.equal(correct_labels, predicted_labels),
+                            tf.ones(tf.shape(correct_labels)),
+                            tf.zeros(tf.shape(correct_labels)))
+    sigma = 0.2
 
-  k = tf.to_int32(tf.reduce_sum(correct_mask))
-  k_p = tf.to_int32(tf.reduce_sum(1.0 - correct_mask))
-  cond_k = tf.where(tf.equal(k, 0), 0, 1)
-  cond_k_p = tf.where(tf.equal(k_p, 0), 0, 1)
-  k = tf.maximum(k, 1)*cond_k*cond_k_p + (1 - cond_k*cond_k_p)*2 
-  k_p = tf.maximum(k_p, 1)*cond_k_p*cond_k + ((1 - cond_k_p*cond_k)*
-                                            (tf.shape(correct_mask)[0] - 2))
-  correct_prob, _ = tf.nn.top_k(predicted_probs*correct_mask, k)
-  incorrect_prob, _ = tf.nn.top_k(predicted_probs*(1 - correct_mask), k_p)
-  
-  def get_pairs(tensor1, tensor2):
-    correct_prob_tiled = tf.expand_dims(tf.tile(tf.expand_dims(tensor1, 1),
-                      [1, tf.shape(tensor1)[0]]), 2)
-    incorrect_prob_tiled = tf.expand_dims(tf.tile(tf.expand_dims(tensor2, 1),
-                      [1, tf.shape(tensor2)[0]]), 2)
-    correct_prob_pairs = tf.concat([correct_prob_tiled,
-                     tf.transpose(correct_prob_tiled, [1, 0, 2])],
-                     axis=2)
-    incorrect_prob_pairs = tf.concat([incorrect_prob_tiled,
-                   tf.transpose(incorrect_prob_tiled, [1, 0, 2])],
-                   axis=2)
-    correct_prob_tiled_1 = tf.expand_dims(tf.tile(tf.expand_dims(tensor1, 1),
-                        [1, tf.shape(tensor2)[0]]), 2)
-    incorrect_prob_tiled_1 = tf.expand_dims(tf.tile(tf.expand_dims(tensor2, 1),
-                        [1, tf.shape(tensor1)[0]]), 2)
-    correct_incorrect_pairs = tf.concat([correct_prob_tiled_1,
-                  tf.transpose(incorrect_prob_tiled_1, [1, 0, 2])],
-                  axis=2)
-    return correct_prob_pairs, incorrect_prob_pairs, correct_incorrect_pairs
-  
-  correct_prob_pairs, incorrect_prob_pairs,\
-               correct_incorrect_pairs = get_pairs(correct_prob, incorrect_prob)
-  correct_kernel = tf_kernel(correct_prob_pairs)
-  incorrect_kernel = tf_kernel(incorrect_prob_pairs)
-  correct_incorrect_kernel = tf_kernel(correct_incorrect_pairs)  
-  sampling_weights_correct = tf.matmul(tf.expand_dims(1.0 - correct_prob, 1),
-                           tf.transpose(tf.expand_dims(1.0 - correct_prob, 1)))
-  correct_correct_vals = get_out_tensor(correct_kernel,
-                                                    sampling_weights_correct)
-  sampling_weights_incorrect = tf.matmul(tf.expand_dims(incorrect_prob, 1),
-                           tf.transpose(tf.expand_dims(incorrect_prob, 1)))
-  incorrect_incorrect_vals = get_out_tensor(incorrect_kernel,
-                                                    sampling_weights_incorrect)
-  sampling_correct_incorrect = tf.matmul(tf.expand_dims(1.0 - correct_prob, 1),
-                           tf.transpose(tf.expand_dims(incorrect_prob, 1)))
-  correct_incorrect_vals = get_out_tensor(correct_incorrect_kernel,
-                                                    sampling_correct_incorrect)
-  correct_denom = tf.reduce_sum(1.0 - correct_prob)
-  incorrect_denom = tf.reduce_sum(incorrect_prob)
-  m = tf.reduce_sum(correct_mask)
-  n = tf.reduce_sum(1.0 - correct_mask)
-  mmd_error = 1.0/(m*m + 1e-5) * tf.reduce_sum(correct_correct_vals) 
-  mmd_error += 1.0/(n*n + 1e-5) * tf.reduce_sum(incorrect_incorrect_vals)
-  mmd_error -= 2.0/(m*n + 1e-5) * tf.reduce_sum(correct_incorrect_vals)
-  return tf.maximum(tf.stop_gradient(tf.to_float(cond_k*cond_k_p))*\
-                                          tf.sqrt(mmd_error + 1e-10), 0.0)
+    def tf_kernel(matrix):
+        """Kernel was taken to be a laplacian kernel with sigma = 0.4."""
+        return tf.exp(-1.0*tf.abs(matrix[:, :, 0] - matrix[:, :, 1])/(2*0.2))  
+
+    k = tf.to_int32(tf.reduce_sum(correct_mask))
+    k_p = tf.to_int32(tf.reduce_sum(1.0 - correct_mask))
+    cond_k = tf.where(tf.equal(k, 0), 0, 1)
+    cond_k_p = tf.where(tf.equal(k_p, 0), 0, 1)
+    k = tf.maximum(k, 1)*cond_k*cond_k_p + (1 - cond_k*cond_k_p)*2 
+    k_p = tf.maximum(k_p, 1)*cond_k_p*cond_k + ((1 - cond_k_p*cond_k)*
+                                              (tf.shape(correct_mask)[0] - 2))
+    correct_prob, _ = tf.nn.top_k(predicted_probs*correct_mask, k)
+    incorrect_prob, _ = tf.nn.top_k(predicted_probs*(1 - correct_mask), k_p)
+
+    def get_pairs(tensor1, tensor2):
+        correct_prob_tiled = tf.expand_dims(tf.tile(tf.expand_dims(tensor1, 1),
+                          [1, tf.shape(tensor1)[0]]), 2)
+        incorrect_prob_tiled = tf.expand_dims(tf.tile(tf.expand_dims(tensor2, 1),
+                          [1, tf.shape(tensor2)[0]]), 2)
+        correct_prob_pairs = tf.concat([correct_prob_tiled,
+                          tf.transpose(correct_prob_tiled, [1, 0, 2])],
+                          axis=2)
+        incorrect_prob_pairs = tf.concat([incorrect_prob_tiled,
+                        tf.transpose(incorrect_prob_tiled, [1, 0, 2])],
+                        axis=2)
+        correct_prob_tiled_1 = tf.expand_dims(tf.tile(tf.expand_dims(tensor1, 1),
+                            [1, tf.shape(tensor2)[0]]), 2)
+        incorrect_prob_tiled_1 = tf.expand_dims(tf.tile(tf.expand_dims(tensor2, 1),
+                            [1, tf.shape(tensor1)[0]]), 2)
+        correct_incorrect_pairs = tf.concat([correct_prob_tiled_1,
+                      tf.transpose(incorrect_prob_tiled_1, [1, 0, 2])],
+                      axis=2)
+        return correct_prob_pairs, incorrect_prob_pairs, correct_incorrect_pairs
+
+    correct_prob_pairs, incorrect_prob_pairs,\
+                  correct_incorrect_pairs = get_pairs(correct_prob, incorrect_prob)
+    correct_kernel = tf_kernel(correct_prob_pairs)
+    incorrect_kernel = tf_kernel(incorrect_prob_pairs)
+    correct_incorrect_kernel = tf_kernel(correct_incorrect_pairs)  
+    sampling_weights_correct = tf.matmul(tf.expand_dims(1.0 - correct_prob, 1),
+                              tf.transpose(tf.expand_dims(1.0 - correct_prob, 1)))
+    correct_correct_vals = get_out_tensor(correct_kernel,
+                                                      sampling_weights_correct)
+    sampling_weights_incorrect = tf.matmul(tf.expand_dims(incorrect_prob, 1),
+                              tf.transpose(tf.expand_dims(incorrect_prob, 1)))
+    incorrect_incorrect_vals = get_out_tensor(incorrect_kernel,
+                                                      sampling_weights_incorrect)
+    sampling_correct_incorrect = tf.matmul(tf.expand_dims(1.0 - correct_prob, 1),
+                              tf.transpose(tf.expand_dims(incorrect_prob, 1)))
+    correct_incorrect_vals = get_out_tensor(correct_incorrect_kernel,
+                                                      sampling_correct_incorrect)
+    correct_denom = tf.reduce_sum(1.0 - correct_prob)
+    incorrect_denom = tf.reduce_sum(incorrect_prob)
+    m = tf.reduce_sum(correct_mask)
+    n = tf.reduce_sum(1.0 - correct_mask)
+    mmd_error = 1.0/(m*m + 1e-5) * tf.reduce_sum(correct_correct_vals) 
+    mmd_error += 1.0/(n*n + 1e-5) * tf.reduce_sum(incorrect_incorrect_vals)
+    mmd_error -= 2.0/(m*n + 1e-5) * tf.reduce_sum(correct_incorrect_vals)
+    return tf.maximum(tf.stop_gradient(tf.to_float(cond_k*cond_k_p))*\
+                                            tf.sqrt(mmd_error + 1e-10), 0.0)
 
 def model(inputs, keep_prob):
     ''' Generate the CNN model '''
