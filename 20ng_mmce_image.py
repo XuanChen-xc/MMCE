@@ -17,7 +17,7 @@ flags = tf.app.flags
 flags.DEFINE_float('mmce_coeff', 4.0,
                    'Coefficient for MMCE error term.')
 flags.DEFINE_integer('batch_size', 128, 'Batch size for training.')
-flags.DEFINE_integer('num_epochs', 22, 'Number of epochs of training.')
+flags.DEFINE_integer('num_epochs', 20, 'Number of epochs of training.')
 FLAGS = flags.FLAGS
 
 BASE_DIR = '' #/Users/xuanchen/Desktop/adversarial /MMCE
@@ -151,7 +151,7 @@ def calibration_mmce_w_loss(logits, correct_labels):
                                             tf.sqrt(mmd_error + 1e-10), 0.0)
 
 def model(inputs):
-    ''' Generate the CNN model '''
+    ''' Generate the lenet model '''
 
    
     input_layer = tf.reshape(inputs, [-1, 28, 28, 1])
@@ -218,6 +218,8 @@ acc = tf.reduce_sum(tf.where(tf.equal(predictions, input_labels),
 sess = tf.Session()
 sess.run(tf.global_variables_initializer())
 sess.run(tf.local_variables_initializer())
+saver = tf.train.Saver()
+
 
 
 batch_size = FLAGS.batch_size
@@ -228,7 +230,7 @@ for epoch in range(num_epochs):
     num_samples = x_train.shape[0]
     num_batches = (num_samples // batch_size) + 1
     i = 0
-    print('number of batches:', num_batches)
+    
     overall_avg_loss = 0.0
     overall_acc = 0.0
     while i < num_samples:
@@ -267,16 +269,30 @@ for epoch in range(num_epochs):
     #print ('Probs: ', preds_t.tolist())
 
     print ('Accuracy, Loss: ', accuracy/x_val.shape[0], loss)
-
+save_path = saver.save(sess, "./models/model.ckpt")
+print("Model saved in path: %s" % save_path)
 # Final testing after training, also print the targets and logits
 # for computing calibration.
 feed_dict = dict()
 feed_dict[input_placeholder] = x_test
 feed_dict[input_labels] = y_test
 accuracy, logits = sess.run([acc, logits_layer], feed_dict=feed_dict)
-print ('Targets: ', y_test.tolist())
-print ('Predictions: ', np.argmax(logits, 1).tolist())
-print ('Probs: ', logits.tolist())
+print('Test Accuracy: ',accuracy)
+# print ('Targets: ', y_test.tolist())
+# print ('Predictions: ', np.argmax(logits, 1).tolist())
+# print ('Probs: ', logits.tolist())
 
+# evaluate on rotated 60 mnist dataset
+rot60_x = np.load('./RotNIST-master/data/train_x_60.npy')
+rot60_y = np.load('./RotNIST-master/data/train_y_60.npy')
 
+feed_dict = dict()
+feed_dict[input_placeholder] = rot60_x
+feed_dict[input_labels] = rot60_y
+accuracy, logits = sess.run([acc, logits_layer], feed_dict=feed_dict)
+print('Rotate 60 Accuracy: ', accuracy)
+np.save('mmce_rot60_probs.npy', logits.tolist())
+# print ('Targets: ', y_test.tolist())
+# print ('Predictions: ', np.argmax(logits, 1).tolist())
+# print ('Probs: ', logits.tolist())
 
