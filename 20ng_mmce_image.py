@@ -17,7 +17,9 @@ flags = tf.app.flags
 flags.DEFINE_float('mmce_coeff', 4.0,
                    'Coefficient for MMCE error term.')
 flags.DEFINE_integer('batch_size', 128, 'Batch size for training.')
+
 flags.DEFINE_integer('num_epochs', 20, 'Number of epochs of training.')
+
 FLAGS = flags.FLAGS
 
 BASE_DIR = '' #/Users/xuanchen/Desktop/adversarial /MMCE
@@ -151,9 +153,9 @@ def calibration_mmce_w_loss(logits, correct_labels):
                                             tf.sqrt(mmd_error + 1e-10), 0.0)
 
 def model(inputs):
+
     ''' Generate the lenet model '''
 
-   
     input_layer = tf.reshape(inputs, [-1, 28, 28, 1])
     padded_input = tf.pad(input_layer, [[0, 0], [2, 2], [2, 2], [0, 0]], "CONSTANT") 
 
@@ -218,9 +220,8 @@ acc = tf.reduce_sum(tf.where(tf.equal(predictions, input_labels),
 sess = tf.Session()
 sess.run(tf.global_variables_initializer())
 sess.run(tf.local_variables_initializer())
+
 saver = tf.train.Saver()
-
-
 
 batch_size = FLAGS.batch_size
 num_epochs = FLAGS.num_epochs
