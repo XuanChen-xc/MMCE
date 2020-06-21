@@ -11,7 +11,6 @@ from keras.layers import Conv1D, MaxPooling1D, Embedding
 from keras.models import Model
 
 import tensorflow as tf
-# import tensorflow.compat.v1 as tf
 from keras.datasets import mnist
 
 flags = tf.app.flags
@@ -205,7 +204,6 @@ def optimize(loss):
     train_opt = opt.minimize(loss)
     return train_opt
 
-# tf.compat.v1.disable_eager_execution()
 input_placeholder = tf.placeholder(tf.float32, [None, 28, 28], name="input")
 input_labels = tf.placeholder(tf.int64, [None, ], name="label")
 
@@ -220,59 +218,11 @@ acc = tf.reduce_sum(tf.where(tf.equal(predictions, input_labels),
                     tf.zeros(tf.shape(predictions))))
 
 sess = tf.Session()
-sess.run(tf.global_variables_initializer())
-sess.run(tf.local_variables_initializer())
-
+init_op = tf.initialize_all_variables()
+sess.run(init_op)
 saver = tf.train.Saver()
-
-batch_size = FLAGS.batch_size
-num_epochs = FLAGS.num_epochs
-
-for epoch in range(num_epochs):
-
-    num_samples = x_train.shape[0]
-    num_batches = (num_samples // batch_size) + 1
-    i = 0
-    
-    overall_avg_loss = 0.0
-    overall_acc = 0.0
-    while i < num_samples:
-
-        batch_x = x_train[i:i+batch_size,:]
-        batch_y = y_train[i:i+batch_size]
-        feed_dict = dict()
-        feed_dict[input_placeholder] = batch_x
-        feed_dict[input_labels] = batch_y
-        
-        loss, _, acc_train = sess.run([loss_layer, train_op, acc],
-                                      feed_dict=feed_dict)
-        overall_avg_loss += loss
-        overall_acc += acc_train
-
-        i += batch_size
-    print('epoch %d:' %epoch)    
-    print ('Train acc: ', overall_acc/x_train.shape[0])
-    print ('Train Loss: ', overall_avg_loss)
-
-    feed_dict = dict()
-    feed_dict[input_placeholder] = x_pval
-    feed_dict[input_labels] = y_pval
-    accuracy, val_loss = sess.run([acc, loss_layer], feed_dict=feed_dict)
-    print ('Val accuracy: ', accuracy/x_pval.shape[0], val_loss)
-    print('-'*20)
-
-save_path = saver.save(sess, "./models/model.ckpt")
-print("Model saved in path: %s" % save_path)
-# Final testing after training, also print the targets and logits
-# for computing calibration.
-feed_dict = dict()
-feed_dict[input_placeholder] = x_test
-feed_dict[input_labels] = y_test
-accuracy, logits = sess.run([acc, logits_layer], feed_dict=feed_dict)
-print('Test Accuracy: ',accuracy)
-# print ('Targets: ', y_test.tolist())
-# print ('Predictions: ', np.argmax(logits, 1).tolist())
-# print ('Probs: ', logits.tolist())
+saver.restore(sess, "./models_10/model_10.ckpt")
+print("Model restored.")
 
 # evaluate on rotated 60 mnist dataset
 rot60_x = np.load('./RotNIST-master/data/train_x_60.npy')
@@ -283,7 +233,7 @@ feed_dict[input_placeholder] = rot60_x
 feed_dict[input_labels] = rot60_y
 accuracy, logits = sess.run([acc, logits_layer], feed_dict=feed_dict)
 print('Rotate 60 Accuracy: ', accuracy)
-np.save('mmce_rot60_probs.npy', logits.tolist())
+np.save('mmce_rot60_10_probs.npy', logits.tolist())
 # print ('Targets: ', y_test.tolist())
 # print ('Predictions: ', np.argmax(logits, 1).tolist())
 # print ('Probs: ', logits.tolist())
