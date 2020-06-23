@@ -3,6 +3,7 @@ from __future__ import print_function
 import os
 import sys
 import numpy as np
+from scipy.special import softmax
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
 from keras.utils import to_categorical
@@ -75,11 +76,11 @@ def calibration_unbiased_loss(logits, correct_labels):
     numerator = dot_product*kernel_prob_pairs
     return tf.reduce_sum(numerator)/tf.square(tf.to_float(tf.shape(correct_mask)[0]))
         
-def self_entropy(logits):
-    probs = tf.nn.softmax(logits)
+
+def self_entropy(probs):
     log_logits = tf.log(probs + 1e-10)
     logits_log_logits = probs*log_logits
-    return -tf.reduce_mean(logits_log_logits)
+    return -tf.reduce_mean(logits_log_logits,axis = 1)*10
 
 def model(inputs):
 
@@ -125,7 +126,9 @@ def cal_uncertainty_error(logits, true_labels):
     incorrect_mask = tf.where(tf.equal(pred_labels, true_labels),
                             tf.zeros(tf.shape(pred_labels)),
                             tf.ones(tf.shape(pred_labels)))
-    entropy = tfd.Categorical(probs=predicted_probs).entropy()
+    # entropy = tfd.Categorical(probs=predicted_probs).entropy()
+    entropy = self_entropy(predicted_probs)
+
     entropy_penalty = tf.reduce_sum(incorrect_mask*entropy)
     return tf.stop_gradient(entropy_penalty)
     
