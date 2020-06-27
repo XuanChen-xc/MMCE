@@ -27,7 +27,7 @@ from skimage import img_as_ubyte
 URL = 'http://yann.lecun.com/exdb/mnist/'
 #Data Directory where all data is saved
 DATA_DIRECTORY = "data"
-
+ANGLE = 90
 
 '''
 Download the data from Yann's website, unless it's already here.
@@ -111,7 +111,7 @@ def expand_training_data(images, labels):
         #time.sleep(3)
         # for i in range(4):
             # rotate the image with random degree
-        angle = 60
+        angle = ANGLE
         new_img = ndimage.rotate(image,angle,reshape=False, cval=bg_value)
 
         # shift the image with random distance
@@ -152,8 +152,8 @@ def prepare_MNIST_data(use_data_augmentation=True):
 
     if use_data_augmentation:
         train_data,train_labels = expand_training_data(train_data, train_labels)
-    np.save('./data/train_x_60.npy', train_data)
-    np.save('./data/train_y_60.npy', train_labels)
+    np.save('./data/train_x_'+ str(ANGLE)+'.npy', train_data)
+    np.save('./data/train_y_'+ str(ANGLE)+'.npy', train_labels)
 
     # train_data = np.load('./data/train_x_60.npy')
     # train_labels = np.load('./data/train_y_60.npy')
