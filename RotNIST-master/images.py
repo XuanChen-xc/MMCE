@@ -63,6 +63,15 @@ def extract_data(filename, num):
         data = np.frombuffer(buf, dtype=np.uint8).astype(np.float32)
         data = data.reshape(num, 28, 28,1) #reshape into tensor
     return data
+'''
+After rotation, if the range of the image is out of 255, normalize it to be in [0,255]
+'''
+def normalize(img):
+    minimum = img.min()
+    maximum = img.max()
+    imgrange = maximum-minimum
+    new = (img-minimum)/imgrange*255.
+    return new
 
 '''
 Extract the labels into a vector of int64 label IDs.
@@ -119,9 +128,10 @@ def expand_training_data(images, labels):
         # new_img_ = ndimage.shift(new_img,shift, cval=bg_value)
 
         #code for saving some of these for visualization purpose only
-        image1 = (image*255) + (255 / 2.0)
-        new_img1 = (new_img*255) + (255 / 2.0)
+        
         new_img2 = np.reshape(new_img,(28,28))
+        if new_img2.max()>255:
+            new_img2 = normalize(new_img2)
         #print(new_img1.shape)
 
         # register new training data
