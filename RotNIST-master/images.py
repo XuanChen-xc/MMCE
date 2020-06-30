@@ -130,7 +130,7 @@ def expand_training_data(images, labels):
         #code for saving some of these for visualization purpose only
         
         new_img2 = np.reshape(new_img,(28,28))
-        if new_img2.max()>255:
+        if (new_img2.max()>255) or (new_img2.min()<0):
             new_img2 = normalize(new_img2)
         #print(new_img1.shape)
 
