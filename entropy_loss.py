@@ -10,16 +10,16 @@ from keras.utils import to_categorical
 from keras.layers import Dense, Input, GlobalMaxPooling1D
 from keras.layers import Conv1D, MaxPooling1D, Embedding
 from keras.models import Model
-import tensorflow_probability as tfp
+# import tensorflow_probability as tfp
 
 # import tensorflow as tf
 import tensorflow.compat.v1 as tf
 from keras.datasets import mnist
 
-tfd = tfp.distributions
+# tfd = tfp.distributions
 
 flags = tf.app.flags
-flags.DEFINE_float('entropy_coeff', 4.0,
+flags.DEFINE_float('entropy_coeff', 10.0,
                    'Coefficient for MMCE error term.')
 flags.DEFINE_integer('batch_size', 128, 'Batch size for training.')
 
@@ -40,8 +40,8 @@ x_train = x_train.astype(np.int64)
 x_test = x_test.astype(np.int64)
 
 num_validation_samples = 1000
-
-
+save_model = False
+load_model = False
 x_pval = x_train[-num_validation_samples:]
 y_pval = y_train[-num_validation_samples:]
 
@@ -70,7 +70,7 @@ def calibration_unbiased_loss(logits, correct_labels):
                             axis=2)
 
     def tf_kernel(matrix):
-      return tf.exp(-1.0*tf.abs(matrix[:, :, 0] - matrix[:, :, 1])/(2*0.2))  
+        return tf.exp(-1.0*tf.abs(matrix[:, :, 0] - matrix[:, :, 1])/(2*0.2))  
 
     kernel_prob_pairs = tf_kernel(prob_pairs)
     numerator = dot_product*kernel_prob_pairs
@@ -123,14 +123,23 @@ def model(inputs):
 def cal_uncertainty_error(logits, true_labels):
     predicted_probs = logits
     pred_labels = tf.argmax(predicted_probs, 1)
-    incorrect_mask = tf.where(tf.equal(pred_labels, true_labels),
-                            tf.zeros(tf.shape(pred_labels)),
-                            tf.ones(tf.shape(pred_labels)))
+    incorrect_mask = tf.where(tf.equal(true_labels, pred_labels),
+                            tf.zeros(tf.shape(true_labels)),
+                            tf.ones(tf.shape(true_labels)))
     # entropy = tfd.Categorical(probs=predicted_probs).entropy()
+    correct_mask = tf.where(tf.equal(true_labels, pred_labels),
+                            tf.ones(tf.shape(true_labels)),
+                            tf.zeros(tf.shape(true_labels)))
     entropy = self_entropy(predicted_probs)
 
     entropy_penalty = tf.reduce_sum(incorrect_mask*entropy)
-    return tf.stop_gradient(entropy_penalty)
+    entropy_correct = tf.reduce_sum(correct_mask*entropy)
+    return tf.stop_gradient(entropy_penalty)-tf.stop_gradient(entropy_correct)
+
+def ce_loss(logits, true_labels):
+    return tf.reduce_mean(
+      tf.nn.sparse_softmax_cross_entropy_with_logits(logits=tf.log(logits+1e-10),
+                                                     labels=true_labels)) 
     
 def add_loss(logits, true_labels):
 
@@ -153,71 +162,105 @@ input_labels = tf.placeholder(tf.int64, [None, ], name="label")
 logits_layer = model(input_placeholder)
 loss_layer = add_loss(logits_layer, input_labels)
 train_op = optimize(loss_layer)
+entropyloss_layer = cal_uncertainty_error(logits_layer, input_labels)
+ce_layer = ce_loss(logits_layer, input_labels)
+
 
 predictions = tf.argmax(logits_layer, 1)
 acc = tf.reduce_sum(tf.where(tf.equal(predictions, input_labels),
                     tf.ones(tf.shape(predictions)),
                     tf.zeros(tf.shape(predictions))))
 
-sess = tf.Session()
-sess.run(tf.global_variables_initializer())
-sess.run(tf.local_variables_initializer())
+if not load_model:
+    sess = tf.Session()
+    sess.run(tf.global_variables_initializer())
+    sess.run(tf.local_variables_initializer())
 
-saver = tf.train.Saver()
+    saver = tf.train.Saver()
 
-batch_size = FLAGS.batch_size
-num_epochs = FLAGS.num_epochs
+    batch_size = FLAGS.batch_size
+    num_epochs = FLAGS.num_epochs
 
-for epoch in range(num_epochs):
+    total_loss = []
+    ce_loss = []
+    entropy_losses = []
 
-    num_samples = x_train.shape[0]
-    num_batches = (num_samples // batch_size) + 1
-    i = 0
-    
-    overall_avg_loss = 0.0
-    overall_acc = 0.0
-    while i < num_samples:
 
-        batch_x = x_train[i:i+batch_size,:]
-        batch_y = y_train[i:i+batch_size]
+    for epoch in range(num_epochs):
+
+        num_samples = x_train.shape[0]
+        num_batches = (num_samples // batch_size) + 1
+        i = 0
+
+        overall_avg_loss = 0.0
+        overall_acc = 0.0
+        overall_entropy_loss = 0.0
+        overall_ce_loss = 0.0
+        while i < num_samples:
+
+            batch_x = x_train[i:i+batch_size,:]
+            batch_y = y_train[i:i+batch_size]
+            feed_dict = dict()
+            feed_dict[input_placeholder] = batch_x
+            feed_dict[input_labels] = batch_y
+
+            entropy_loss = sess.run(entropyloss_layer, feed_dict=feed_dict)
+            celoss = sess.run(ce_layer, feed_dict=feed_dict)
+            loss, _, acc_train = sess.run([loss_layer, train_op, acc],
+                                          feed_dict=feed_dict) 
+            overall_avg_loss += loss
+            overall_acc += acc_train
+            overall_entropy_loss += entropy_loss
+            overall_ce_loss += celoss
+
+
+            i += batch_size
+        print('epoch %d:' %(epoch+1))    
+        print ('Train Acc: ', overall_acc/x_train.shape[0])
+        print ('Train Loss: ', overall_avg_loss)
+        print('Entropy Loss: ', overall_entropy_loss)
+        print('CE Loss: ', overall_ce_loss)
+
         feed_dict = dict()
-        feed_dict[input_placeholder] = batch_x
-        feed_dict[input_labels] = batch_y
-        
-        loss, _, acc_train = sess.run([loss_layer, train_op, acc],
-                                      feed_dict=feed_dict)
-       
-        overall_avg_loss += loss
-        overall_acc += acc_train
+        feed_dict[input_placeholder] = x_pval
+        feed_dict[input_labels] = y_pval
+        accuracy, val_loss = sess.run([acc, loss_layer], feed_dict=feed_dict)
+        print ('Val Accuracy: ', accuracy/x_pval.shape[0])
+        print ('Val Loss: ', val_loss)
+        print('-'*40)
 
-        i += batch_size
-    print('epoch %d:' %(epoch+1))    
-    print ('Train Acc: ', overall_acc/x_train.shape[0])
-    print ('Train Loss: ', overall_avg_loss)
+        total_loss.append(overall_avg_loss)
+        ce_loss.append(overall_ce_loss)
+        entropy_losses.append(overall_entropy_loss)
 
-    feed_dict = dict()
-    feed_dict[input_placeholder] = x_pval
-    feed_dict[input_labels] = y_pval
-    accuracy, val_loss = sess.run([acc, loss_layer], feed_dict=feed_dict)
-    print ('Val Accuracy: ', accuracy/x_pval.shape[0])
-    print ('Val Loss: ', val_loss)
-    print('-'*40)
-
-
-save = os.path.join('models_entropyloss')
-if os.path.exists(save):
-    save_path = saver.save(sess, save+'/coeff-'+str(FLAGS.entropy_coeff))
+    np.save('./loss/total_loss.npy', total_loss)
+    np.save('./loss/ce_loss.npy', ce_loss)
+    np.save('./loss/entropy_loss.npy', entropy_losses)
 else:
-    os.makedirs(save)
-    save_path = saver.save(sess, save+'/coeff-'+str(FLAGS.entropy_coeff))
-print("Model saved in path: %s" % save_path)
+    sess = tf.Session()
+    init_op = tf.initialize_all_variables()
+    sess.run(init_op)
+    saver = tf.train.Saver()
+    saver.restore(sess, "./models_entropyloss/coeff-4.0")
+    print("Model restored.")
+    
+    
+    
+if save_model:
+    save = os.path.join('models_entropyloss')
+    if os.path.exists(save):
+        save_path = saver.save(sess, save+'/coeff-'+str(FLAGS.entropy_coeff))
+    else:
+        os.makedirs(save)
+        save_path = saver.save(sess, save+'/coeff-'+str(FLAGS.entropy_coeff))
+    print("Model saved in path: %s" % save_path)
 # Final testing after training, also print the targets and logits
 # for computing calibration.
 feed_dict = dict()
 feed_dict[input_placeholder] = x_test
 feed_dict[input_labels] = y_test
 accuracy, logits = sess.run([acc, logits_layer], feed_dict=feed_dict)
-print('Test Accuracy: ',accuracy)
+print('Test Accuracy: ',accuracy/x_test.shape[0])
 
 
 # evaluate on rotated 60 mnist dataset
@@ -228,6 +271,6 @@ feed_dict = dict()
 feed_dict[input_placeholder] = rot60_x
 feed_dict[input_labels] = rot60_y
 accuracy, logits = sess.run([acc, logits_layer], feed_dict=feed_dict)
-print('Rotate 60 Accuracy: ', accuracy)
-np.save('entropy_rot60_'+str(FLAGS.entropy_coeff)+'_probs.npy', logits.tolist())
+print('Rotate 60 Accuracy: ', accuracy/rot60_x.shape[0])
+np.save('./newentropy_probs/newentropy_rot60_'+str(FLAGS.entropy_coeff)+'_probs.npy', logits.tolist())
 
