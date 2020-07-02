@@ -28,12 +28,6 @@ flags.DEFINE_integer('num_epochs', 15, 'Number of epochs of training.')
 FLAGS = flags.FLAGS
 
 BASE_DIR = '' #/Users/xuanchen/Desktop/adversarial/MMCE
-GLOVE_DIR = os.path.join(BASE_DIR, 'glove.6B')
-TEXT_DATA_DIR = os.path.join(BASE_DIR, '20_newsgroup')
-MAX_SEQUENCE_LENGTH = 1000
-MAX_NUM_WORDS = 20000
-EMBEDDING_DIM = 100
-VALIDATION_SPLIT = 0.2
 
 (x_train,y_train),(x_test,y_test) = mnist.load_data()
 x_train = x_train.astype(np.int64)
@@ -241,8 +235,9 @@ else:
     init_op = tf.initialize_all_variables()
     sess.run(init_op)
     saver = tf.train.Saver()
-    saver.restore(sess, "./models_entropyloss/coeff-4.0")
-    print("Model restored.")
+    restorepath = "./models_entropyloss/coeff-"+str(FLAGS.entropy_coeff)
+    saver.restore(sess, restorepath)
+    print("Model restored from %s" %restorepath)
     
     
     
@@ -264,13 +259,31 @@ print('Test Accuracy: ',accuracy/x_test.shape[0])
 
 
 # evaluate on rotated 60 mnist dataset
-rot60_x = np.load('./RotNIST-master/data/train_x_60.npy')
-rot60_y = np.load('./RotNIST-master/data/train_y_60.npy')
+evaluate_angle = [int(i) for i in range(15, 195, 15)]
+prediction_error = []
+accuracies = []
+for a in evaluate_angle:
 
-feed_dict = dict()
-feed_dict[input_placeholder] = rot60_x
-feed_dict[input_labels] = rot60_y
-accuracy, logits = sess.run([acc, logits_layer], feed_dict=feed_dict)
-print('Rotate 60 Accuracy: ', accuracy/rot60_x.shape[0])
-np.save('./newentropy_probs/newentropy_rot60_'+str(FLAGS.entropy_coeff)+'_probs.npy', logits.tolist())
+    rotate_x = np.load('./RotNIST-master/data/train_x_'+str(a)+'.npy')
+    rotate_y = np.load('./RotNIST-master/data/train_y_'+str(a)+'.npy')
+    feed_dict = dict()
+    feed_dict[input_placeholder] = rotate_x
+    feed_dict[input_labels] = rotate_y
+    accuracy, loss = sess.run([acc, loss_layer], feed_dict=feed_dict)
+    print('Rotate %d Accuracy: %.4f' %(a, accuracy/rotate_x.shape[0]))
+    prediction_error.append(loss)
+    accuracies.append(accuracy)
+
+np.save('./plot_error_acc/error.npy', prediction_error)
+np.save('./plot_error_acc/acc.npy', accuracies)
+
+# rot60_x = np.load('./RotNIST-master/data/train_x_60.npy')
+# rot60_y = np.load('./RotNIST-master/data/train_y_60.npy')
+
+# feed_dict = dict()
+# feed_dict[input_placeholder] = rot60_x
+# feed_dict[input_labels] = rot60_y
+# accuracy, logits = sess.run([acc, logits_layer], feed_dict=feed_dict)
+# print('Rotate 60 Accuracy: ', accuracy/rot60_x.shape[0])
+# np.save('./newentropy_probs/newentropy_rot60_'+str(FLAGS.entropy_coeff)+'_probs.npy', logits.tolist())
 
