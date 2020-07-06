@@ -15,21 +15,13 @@ import tensorflow as tf
 from keras.datasets import mnist
 
 flags = tf.app.flags
-flags.DEFINE_float('mmce_coeff', 4.0,
+flags.DEFINE_float('mmce_coeff', 8.0,
                    'Coefficient for MMCE error term.')
 flags.DEFINE_integer('batch_size', 128, 'Batch size for training.')
 
 flags.DEFINE_integer('num_epochs', 20, 'Number of epochs of training.')
 
 FLAGS = flags.FLAGS
-
-BASE_DIR = '' #/Users/xuanchen/Desktop/adversarial/MMCE
-GLOVE_DIR = os.path.join(BASE_DIR, 'glove.6B')
-TEXT_DATA_DIR = os.path.join(BASE_DIR, '20_newsgroup')
-MAX_SEQUENCE_LENGTH = 1000
-MAX_NUM_WORDS = 20000
-EMBEDDING_DIM = 100
-VALIDATION_SPLIT = 0.2
 
 (x_train,y_train),(x_test,y_test) = mnist.load_data()
 x_train = x_train.astype(np.int64)
@@ -66,7 +58,7 @@ def calibration_unbiased_loss(logits, correct_labels):
                             axis=2)
 
     def tf_kernel(matrix):
-      return tf.exp(-1.0*tf.abs(matrix[:, :, 0] - matrix[:, :, 1])/(2*0.2))  
+          return tf.exp(-1.0*tf.abs(matrix[:, :, 0] - matrix[:, :, 1])/(2*0.2))  
 
     kernel_prob_pairs = tf_kernel(prob_pairs)
     numerator = dot_product*kernel_prob_pairs
@@ -261,7 +253,7 @@ for epoch in range(num_epochs):
     print ('Val accuracy: ', accuracy/x_pval.shape[0], val_loss)
     print('-'*20)
 
-save_path = saver.save(sess, "./models/model.ckpt")
+save_path = saver.save(sess, "./models/model-"+str(FLAGS.mmce_coeff))
 print("Model saved in path: %s" % save_path)
 # Final testing after training, also print the targets and logits
 # for computing calibration.
@@ -270,9 +262,6 @@ feed_dict[input_placeholder] = x_test
 feed_dict[input_labels] = y_test
 accuracy, logits = sess.run([acc, logits_layer], feed_dict=feed_dict)
 print('Test Accuracy: ',accuracy)
-# print ('Targets: ', y_test.tolist())
-# print ('Predictions: ', np.argmax(logits, 1).tolist())
-# print ('Probs: ', logits.tolist())
 
 # evaluate on rotated 60 mnist dataset
 rot60_x = np.load('./RotNIST-master/data/train_x_60.npy')
@@ -282,9 +271,7 @@ feed_dict = dict()
 feed_dict[input_placeholder] = rot60_x
 feed_dict[input_labels] = rot60_y
 accuracy, logits = sess.run([acc, logits_layer], feed_dict=feed_dict)
-print('Rotate 60 Accuracy: ', accuracy)
-np.save('mmce_rot60_probs.npy', logits.tolist())
-# print ('Targets: ', y_test.tolist())
-# print ('Predictions: ', np.argmax(logits, 1).tolist())
-# print ('Probs: ', logits.tolist())
+print('Rotate 60 Accuracy: ', accuracy/rot60_x.shape[0])
+np.save('./mmce_probs/mmce_rot60_probs.npy', logits.tolist())
+
 
