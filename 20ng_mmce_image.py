@@ -180,15 +180,15 @@ def model(inputs):
     dense2 = tf.layers.dense(inputs=dense1, units=84, activation=tf.nn.relu)
 
     # Output layer, 10 neurons for each digit
-    logits = tf.layers.dense(inputs=dense2, units=10, activation=tf.nn.softmax)
+    logits = tf.layers.dense(inputs=dense2, units=10)
     
     return logits
 
 
 def add_loss(logits, true_labels):
-    mmce_error = 1.0*calibration_mmce_w_loss(tf.log(logits + 1e-10), true_labels)
+    mmce_error = 1.0*calibration_mmce_w_loss(logits, true_labels)
     ce_error = tf.reduce_mean(
-      tf.nn.sparse_softmax_cross_entropy_with_logits(logits=tf.log(logits+1e-10),
+      tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits,
                                                      labels=true_labels))
     return ce_error + FLAGS.mmce_coeff*mmce_error
 
@@ -205,8 +205,9 @@ input_labels = tf.placeholder(tf.int64, [None, ], name="label")
 logits_layer = model(input_placeholder)
 loss_layer = add_loss(logits_layer, input_labels)
 train_op = optimize(loss_layer)
-
+predicted_probs = tf.nn.softmax(logits_layer)
 predictions = tf.argmax(logits_layer, 1)
+predicted_probs = tf.nn.softmax(logits_layer)
 acc = tf.reduce_sum(tf.where(tf.equal(predictions, input_labels),
                     tf.ones(tf.shape(predictions)),
                     tf.zeros(tf.shape(predictions))))
@@ -250,7 +251,7 @@ for epoch in range(num_epochs):
     feed_dict[input_placeholder] = x_pval
     feed_dict[input_labels] = y_pval
     accuracy, val_loss = sess.run([acc, loss_layer], feed_dict=feed_dict)
-    print ('Val accuracy: ', accuracy/x_pval.shape[0], val_loss)
+    print ('Val accuracy: ', accuracy/x_pval.shape[0], 'Val Loss: ',val_loss)
     print('-'*20)
 
 save_path = saver.save(sess, "./models/model-"+str(FLAGS.mmce_coeff))
@@ -260,7 +261,7 @@ print("Model saved in path: %s" % save_path)
 feed_dict = dict()
 feed_dict[input_placeholder] = x_test
 feed_dict[input_labels] = y_test
-accuracy, logits = sess.run([acc, logits_layer], feed_dict=feed_dict)
+accuracy = sess.run(acc, feed_dict=feed_dict)
 print('Test Accuracy: ',accuracy)
 
 # evaluate on rotated 60 mnist dataset
@@ -270,8 +271,8 @@ rot60_y = np.load('./RotNIST-master/data/train_y_60.npy')
 feed_dict = dict()
 feed_dict[input_placeholder] = rot60_x
 feed_dict[input_labels] = rot60_y
-accuracy, logits = sess.run([acc, logits_layer], feed_dict=feed_dict)
+accuracy, probs = sess.run([acc, predicted_probs], feed_dict=feed_dict)
 print('Rotate 60 Accuracy: ', accuracy/rot60_x.shape[0])
-np.save('./mmce_probs/mmce_rot60_probs.npy', logits.tolist())
+np.save('./mmce_probs/mmce_rot60_probs_'+str(FLAGS.mmce_coeff)+'_.npy', probs.tolist())
 
 
