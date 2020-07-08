@@ -22,14 +22,6 @@ flags.DEFINE_integer('num_epochs', 20, 'Number of epochs of training.')
 
 FLAGS = flags.FLAGS
 
-BASE_DIR = '' #/Users/xuanchen/Desktop/adversarial /MMCE
-GLOVE_DIR = os.path.join(BASE_DIR, 'glove.6B')
-TEXT_DATA_DIR = os.path.join(BASE_DIR, '20_newsgroup')
-MAX_SEQUENCE_LENGTH = 1000
-MAX_NUM_WORDS = 20000
-EMBEDDING_DIM = 100
-VALIDATION_SPLIT = 0.2
-
 (x_train,y_train),(x_test,y_test) = mnist.load_data()
 x_train = x_train.astype(np.int64)
 x_test = x_test.astype(np.int64)

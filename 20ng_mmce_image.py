@@ -9,26 +9,29 @@ from keras.utils import to_categorical
 from keras.layers import Dense, Input, GlobalMaxPooling1D
 from keras.layers import Conv1D, MaxPooling1D, Embedding
 from keras.models import Model
+from tensorflow.contrib.layers import flatten
 
 import tensorflow as tf
 # import tensorflow.compat.v1 as tf
 from keras.datasets import mnist
 
 flags = tf.app.flags
-flags.DEFINE_float('mmce_coeff', 8.0,
+flags.DEFINE_float('mmce_coeff', 1.0,
                    'Coefficient for MMCE error term.')
 flags.DEFINE_integer('batch_size', 128, 'Batch size for training.')
 
-flags.DEFINE_integer('num_epochs', 20, 'Number of epochs of training.')
+flags.DEFINE_integer('num_epochs', 10, 'Number of epochs of training.')
 
 FLAGS = flags.FLAGS
+
+save_model = False
+load_model = True
 
 (x_train,y_train),(x_test,y_test) = mnist.load_data()
 x_train = x_train.astype(np.int64)
 x_test = x_test.astype(np.int64)
 
 num_validation_samples = 1000
-
 
 x_pval = x_train[-num_validation_samples:]
 y_pval = y_train[-num_validation_samples:]
@@ -149,47 +152,68 @@ def model(inputs):
 
     ''' Generate the lenet model '''
 
+    mu = 0
+    sigma = 0.1
+    layer_depth = {
+        'layer_1' : 6,
+        'layer_2' : 16,
+        'layer_3' : 120,
+        'layer_f1' : 84
+    }
     input_layer = tf.reshape(inputs, [-1, 28, 28, 1])
     padded_input = tf.pad(input_layer, [[0, 0], [2, 2], [2, 2], [0, 0]], "CONSTANT") 
+    # Layer 1: Convolutional. Input = 32x32x1. Output = 28x28x6.
+    conv1_w = tf.Variable(tf.truncated_normal(shape = [5,5,1,6],mean = mu, stddev = sigma))
+    conv1_b = tf.Variable(tf.zeros(6))
+    conv1 = tf.nn.conv2d(padded_input,conv1_w, strides = [1,1,1,1], padding = 'VALID') + conv1_b 
+    # Activation.
+    conv1 = tf.nn.relu(conv1)
 
-    conv1 = tf.layers.conv2d(
-          inputs=padded_input,
-          filters=6, # Number of filters.
-          kernel_size=5, # Size of each filter is 5x5.
-          padding="valid", # No padding is applied to the input.
-          activation=tf.nn.relu,
-          name='conv_layer1')
+    # Pooling. Input = 28x28x6. Output = 14x14x6.
+    pool_1 = tf.nn.max_pool(conv1,ksize = [1,2,2,1], strides = [1,2,2,1], padding = 'VALID')
+    
+    # Layer 2: Convolutional. Output = 10x10x16.
+    conv2_w = tf.Variable(tf.truncated_normal(shape = [5,5,6,16], mean = mu, stddev = sigma))
+    conv2_b = tf.Variable(tf.zeros(16))
+    conv2 = tf.nn.conv2d(pool_1, conv2_w, strides = [1,1,1,1], padding = 'VALID') + conv2_b
+    # Activation.
+    conv2 = tf.nn.relu(conv2)
 
-    pool1 = tf.layers.max_pooling2d(inputs=conv1, pool_size=[2, 2], strides=2)
+    # Pooling. Input = 10x10x16. Output = 5x5x16.
+    pool_2 = tf.nn.max_pool(conv2, ksize = [1,2,2,1], strides = [1,2,2,1], padding = 'VALID') 
+    
+    # Flatten. Input = 5x5x16. Output = 400.
+    fc1 = flatten(pool_2)
+    
+    # Layer 3: Fully Connected. Input = 400. Output = 120.
+    fc1_w = tf.Variable(tf.truncated_normal(shape = (400,120), mean = mu, stddev = sigma))
+    fc1_b = tf.Variable(tf.zeros(120))
+    fc1 = tf.matmul(fc1,fc1_w) + fc1_b
+    
+    # Activation.
+    fc1 = tf.nn.relu(fc1)
 
-    conv2 = tf.layers.conv2d(
-          inputs=pool1,
-          filters=16, # Number of filters
-          kernel_size=5, # Size of each filter is 5x5
-          padding="valid", # No padding
-          activation=tf.nn.relu)
-    # Reshaping output into a single dimention array for input to fully connected layer
-    pool2 = tf.layers.max_pooling2d(inputs=conv2, pool_size=[2, 2], strides=2)
-
-    pool2_flat = tf.reshape(pool2, [-1, 5 * 5 * 16])
-
-    # Fully connected layer #1: Has 120 neurons
-    dense1 = tf.layers.dense(inputs=pool2_flat, units=120, activation=tf.nn.relu)
-
-    # Fully connected layer #2: Has 84 neurons
-    dense2 = tf.layers.dense(inputs=dense1, units=84, activation=tf.nn.relu)
-
-    # Output layer, 10 neurons for each digit
-    logits = tf.layers.dense(inputs=dense2, units=10)
+    # Layer 4: Fully Connected. Input = 120. Output = 84.
+    fc2_w = tf.Variable(tf.truncated_normal(shape = (120,84), mean = mu, stddev = sigma))
+    fc2_b = tf.Variable(tf.zeros(84))
+    fc2 = tf.matmul(fc1,fc2_w) + fc2_b
+    # Activation.
+    fc2 = tf.nn.relu(fc2)
+    
+    # Layer 5: Fully Connected. Input = 84. Output = 10.
+    fc3_w = tf.Variable(tf.truncated_normal(shape = (84,10), mean = mu , stddev = sigma))
+    fc3_b = tf.Variable(tf.zeros(10))
+    logits = tf.matmul(fc2, fc3_w) + fc3_b
     
     return logits
 
 
 def add_loss(logits, true_labels):
     mmce_error = 1.0*calibration_mmce_w_loss(logits, true_labels)
+    one_hot_y = tf.one_hot(true_labels, 10)
     ce_error = tf.reduce_mean(
-      tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits,
-                                                     labels=true_labels))
+      tf.nn.softmax_cross_entropy_with_logits(logits=logits,
+                                                     labels=one_hot_y))
     return ce_error + FLAGS.mmce_coeff*mmce_error
 
 def optimize(loss):
@@ -207,7 +231,6 @@ loss_layer = add_loss(logits_layer, input_labels)
 train_op = optimize(loss_layer)
 predicted_probs = tf.nn.softmax(logits_layer)
 predictions = tf.argmax(logits_layer, 1)
-predicted_probs = tf.nn.softmax(logits_layer)
 acc = tf.reduce_sum(tf.where(tf.equal(predictions, input_labels),
                     tf.ones(tf.shape(predictions)),
                     tf.zeros(tf.shape(predictions))))
@@ -221,58 +244,84 @@ saver = tf.train.Saver()
 batch_size = FLAGS.batch_size
 num_epochs = FLAGS.num_epochs
 
-for epoch in range(num_epochs):
+if not load_model:
+    for epoch in range(num_epochs):
 
-    num_samples = x_train.shape[0]
-    num_batches = (num_samples // batch_size) + 1
-    i = 0
-    
-    overall_avg_loss = 0.0
-    overall_acc = 0.0
-    while i < num_samples:
+        num_samples = x_train.shape[0]
+        num_batches = (num_samples // batch_size) + 1
+        i = 0
 
-        batch_x = x_train[i:i+batch_size,:]
-        batch_y = y_train[i:i+batch_size]
+        overall_avg_loss = 0.0
+        overall_acc = 0.0
+        while i < num_samples:
+
+            batch_x = x_train[i:i+batch_size,:]
+            batch_y = y_train[i:i+batch_size]
+
+            feed_dict = dict()
+            feed_dict[input_placeholder] = batch_x
+            feed_dict[input_labels] = batch_y
+
+            loss, _, acc_train = sess.run([loss_layer, train_op, acc],
+                                          feed_dict=feed_dict)
+            overall_avg_loss += loss
+            overall_acc += acc_train
+
+            i += batch_size
+        print('epoch %d:' %epoch)    
+        print ('Train acc: ', overall_acc/x_train.shape[0])
+        print ('Train Loss: ', overall_avg_loss)
+
         feed_dict = dict()
-        feed_dict[input_placeholder] = batch_x
-        feed_dict[input_labels] = batch_y
-        
-        loss, _, acc_train = sess.run([loss_layer, train_op, acc],
-                                      feed_dict=feed_dict)
-        overall_avg_loss += loss
-        overall_acc += acc_train
+        feed_dict[input_placeholder] = x_pval
+        feed_dict[input_labels] = y_pval
+        accuracy, val_loss = sess.run([acc, loss_layer], feed_dict=feed_dict)
+        print ('Val accuracy: ', accuracy/x_pval.shape[0], 'Val Loss: ',val_loss)
+        print('-'*20)
+else:
+    saver = tf.train.Saver()
+    restorepath = "./models/model-" +str(FLAGS.mmce_coeff)
+    saver.restore(sess, restorepath)
+    print("Model restored from %s." %restorepath)
 
-        i += batch_size
-    print('epoch %d:' %epoch)    
-    print ('Train acc: ', overall_acc/x_train.shape[0])
-    print ('Train Loss: ', overall_avg_loss)
 
-    feed_dict = dict()
-    feed_dict[input_placeholder] = x_pval
-    feed_dict[input_labels] = y_pval
-    accuracy, val_loss = sess.run([acc, loss_layer], feed_dict=feed_dict)
-    print ('Val accuracy: ', accuracy/x_pval.shape[0], 'Val Loss: ',val_loss)
-    print('-'*20)
-
-save_path = saver.save(sess, "./models/model-"+str(FLAGS.mmce_coeff))
-print("Model saved in path: %s" % save_path)
-# Final testing after training, also print the targets and logits
-# for computing calibration.
-feed_dict = dict()
-feed_dict[input_placeholder] = x_test
-feed_dict[input_labels] = y_test
-accuracy = sess.run(acc, feed_dict=feed_dict)
-print('Test Accuracy: ',accuracy)
+if save_model:
+    save_path = saver.save(sess, "./models/model-"+str(FLAGS.mmce_coeff))
+    print("Model saved in path: %s" % save_path)
+# Final testing after training
+# feed_dict = dict()
+# feed_dict[input_placeholder] = x_test
+# feed_dict[input_labels] = y_test
+# accuracy, probs = sess.run([acc, predicted_probs], feed_dict=feed_dict)
+# print('Test Accuracy: ',accuracy/x_test.shape[0])
+# np.save('./mmce_probs/mmce_rot0_probs_'+str(FLAGS.mmce_coeff)+'_.npy', probs.tolist())
 
 # evaluate on rotated 60 mnist dataset
-rot60_x = np.load('./RotNIST-master/data/train_x_60.npy')
-rot60_y = np.load('./RotNIST-master/data/train_y_60.npy')
+rot60_x = np.load('./RotNIST-master/data/train_x_30.npy')
+rot60_y = np.load('./RotNIST-master/data/train_y_30.npy')
 
 feed_dict = dict()
 feed_dict[input_placeholder] = rot60_x
 feed_dict[input_labels] = rot60_y
 accuracy, probs = sess.run([acc, predicted_probs], feed_dict=feed_dict)
 print('Rotate 60 Accuracy: ', accuracy/rot60_x.shape[0])
-np.save('./mmce_probs/mmce_rot60_probs_'+str(FLAGS.mmce_coeff)+'_.npy', probs.tolist())
+np.save('./mmce_probs_30/mmce_rot30_probs_'+str(FLAGS.mmce_coeff)+'_.npy', probs.tolist())
+
+# evaluate on rotated mnist dataset
+# evaluate_angle = [int(i) for i in range(30, 180, 30)]
+# for a in evaluate_angle:
+
+#     rotate_x = np.load('/home/xuanc/pacman/Pacman/MMCE/RotNIST-master/data/train_x_'+str(a)+'.npy')
+#     rotate_y = np.load('/home/xuanc/pacman/Pacman/MMCE/RotNIST-master/data/train_y_'+str(a)+'.npy')
+    
+#     feed_dict = dict()
+#     feed_dict[input_placeholder] = rotate_x
+#     feed_dict[input_labels] = rotate_y
+#     accuracy, probs = sess.run([acc, predicted_probs], feed_dict=feed_dict)
+    
+#     print('Rotate %d Accuracy: %.4f' %(a, accuracy/rotate_x.shape[0]))
+
+#     np.save('./mmce_probs/mmce_rot'+str(a)+'_probs_'+str(FLAGS.mmce_coeff)+'_.npy', probs.tolist())
+
 
 

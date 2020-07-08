@@ -19,7 +19,7 @@ import csv
 from scipy import ndimage
 from six.moves import urllib
 from PIL import Image
-import imageio
+# import imageio
 from skimage import img_as_ubyte
 # from scipy.misc import imsave
 
@@ -170,23 +170,23 @@ def prepare_MNIST_data(use_data_augmentation=True):
     # train_data = np.load('./data/train_x_60.npy')
     # train_labels = np.load('./data/train_y_60.npy')
     print('save done!')
-    if not os.path.isdir("data/train-images"):
-        os.makedirs("data/train-images")
-    if not os.path.isdir("data/test-images"):
-        os.makedirs("data/test-images")
-    # process train data
-    with open("data/train-labels.csv", 'w') as csvFile:
-        writer = csv.writer(csvFile, delimiter=',', quotechar='"')
-        for i in range(len(train_data)):
-            if i<20:
+#     if not os.path.isdir("data/train-images"):
+#         os.makedirs("data/train-images")
+#     if not os.path.isdir("data/test-images"):
+#         os.makedirs("data/test-images")
+#     # process train data
+#     with open("data/train-labels.csv", 'w') as csvFile:
+#         writer = csv.writer(csvFile, delimiter=',', quotechar='"')
+#         for i in range(len(train_data)):
+#             if i<20:
                 
-                imageio.imwrite("data/train-images/" + str(i) + ".jpg", train_data[i][:,:])
-            writer.writerow(["train-images/" + str(i) + ".jpg", train_labels[i]])
-    # repeat for test data
-    with open("data/test-labels.csv", 'w') as csvFile:
-        writer = csv.writer(csvFile, delimiter=',', quotechar='"')
-        for i in range(len(test_data)):
-            #imsave("mnist/test-images/" + str(i) + ".jpg", test_data[i][:,:,0])
-            writer.writerow(["test-images/" + str(i) + ".jpg", test_labels[i]])
+#                 imageio.imwrite("data/train-images/" + str(i) + ".jpg", train_data[i][:,:])
+#             writer.writerow(["train-images/" + str(i) + ".jpg", train_labels[i]])
+#     # repeat for test data
+#     with open("data/test-labels.csv", 'w') as csvFile:
+#         writer = csv.writer(csvFile, delimiter=',', quotechar='"')
+#         for i in range(len(test_data)):
+#             #imsave("mnist/test-images/" + str(i) + ".jpg", test_data[i][:,:,0])
+#             writer.writerow(["test-images/" + str(i) + ".jpg", test_labels[i]])
     #return train_total_data, train_size, validation_data, validation_labels, test_data, test_labels
 prepare_MNIST_data(True)
