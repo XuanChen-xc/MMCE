@@ -16,16 +16,16 @@ import tensorflow as tf
 from keras.datasets import mnist
 
 flags = tf.app.flags
-flags.DEFINE_float('mmce_coeff', 1.0,
+flags.DEFINE_float('mmce_coeff', 3.0,
                    'Coefficient for MMCE error term.')
 flags.DEFINE_integer('batch_size', 128, 'Batch size for training.')
 
-flags.DEFINE_integer('num_epochs', 10, 'Number of epochs of training.')
+flags.DEFINE_integer('num_epochs', 25, 'Number of epochs of training.')
 
 FLAGS = flags.FLAGS
 
-save_model = False
-load_model = True
+save_model = True
+load_model = False
 
 (x_train,y_train),(x_test,y_test) = mnist.load_data()
 x_train = x_train.astype(np.int64)
@@ -297,31 +297,31 @@ if save_model:
 # np.save('./mmce_probs/mmce_rot0_probs_'+str(FLAGS.mmce_coeff)+'_.npy', probs.tolist())
 
 # evaluate on rotated 60 mnist dataset
-rot60_x = np.load('./RotNIST-master/data/train_x_30.npy')
-rot60_y = np.load('./RotNIST-master/data/train_y_30.npy')
+# rot60_x = np.load('./RotNIST-master/data/train_x_30.npy')
+# rot60_y = np.load('./RotNIST-master/data/train_y_30.npy')
 
-feed_dict = dict()
-feed_dict[input_placeholder] = rot60_x
-feed_dict[input_labels] = rot60_y
-accuracy, probs = sess.run([acc, predicted_probs], feed_dict=feed_dict)
-print('Rotate 60 Accuracy: ', accuracy/rot60_x.shape[0])
-np.save('./mmce_probs_30/mmce_rot30_probs_'+str(FLAGS.mmce_coeff)+'_.npy', probs.tolist())
+# feed_dict = dict()
+# feed_dict[input_placeholder] = rot60_x
+# feed_dict[input_labels] = rot60_y
+# accuracy, probs = sess.run([acc, predicted_probs], feed_dict=feed_dict)
+# print('Rotate 60 Accuracy: ', accuracy/rot60_x.shape[0])
+# np.save('./mmce_probs_30/mmce_rot30_probs_'+str(FLAGS.mmce_coeff)+'_.npy', probs.tolist())
 
 # evaluate on rotated mnist dataset
-# evaluate_angle = [int(i) for i in range(30, 180, 30)]
-# for a in evaluate_angle:
+evaluate_angle = [int(i) for i in range(15, 195, 15)]
+for a in evaluate_angle:
 
-#     rotate_x = np.load('/home/xuanc/pacman/Pacman/MMCE/RotNIST-master/data/train_x_'+str(a)+'.npy')
-#     rotate_y = np.load('/home/xuanc/pacman/Pacman/MMCE/RotNIST-master/data/train_y_'+str(a)+'.npy')
+    rotate_x = np.load('/home/xuanc/pacman/Pacman/MMCE/RotNIST-master/data/train_x_'+str(a)+'.npy')
+    rotate_y = np.load('/home/xuanc/pacman/Pacman/MMCE/RotNIST-master/data/train_y_'+str(a)+'.npy')
     
-#     feed_dict = dict()
-#     feed_dict[input_placeholder] = rotate_x
-#     feed_dict[input_labels] = rotate_y
-#     accuracy, probs = sess.run([acc, predicted_probs], feed_dict=feed_dict)
+    feed_dict = dict()
+    feed_dict[input_placeholder] = rotate_x
+    feed_dict[input_labels] = rotate_y
+    accuracy, probs = sess.run([acc, predicted_probs], feed_dict=feed_dict)
     
-#     print('Rotate %d Accuracy: %.4f' %(a, accuracy/rotate_x.shape[0]))
+    print('Rotate %d Accuracy: %.4f' %(a, accuracy/rotate_x.shape[0]))
 
-#     np.save('./mmce_probs/mmce_rot'+str(a)+'_probs_'+str(FLAGS.mmce_coeff)+'_.npy', probs.tolist())
+    np.save('./mmce_probs/coeff3/mmce_rot'+str(a)+'_probs_'+str(FLAGS.mmce_coeff)+'_.npy', probs.tolist())
 
 
 
